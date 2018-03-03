@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test": "mocha"
+  },
   "dependencies": {
     "Base64": "0.3.0",
     "assert": "1.4.1",
