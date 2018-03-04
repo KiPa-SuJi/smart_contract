@@ -2,6 +2,7 @@ const Web3 = require('web3');
 const solc = require('solc');
 const fs = require('fs');
 const ethabi = require('ethereumjs-abi');
+const EthereumTx = require('ethereumjs-tx');
 const commandLineArgs = require('command-line-args');
 const async = require('async');
 
@@ -12,10 +13,11 @@ const cli = [
   { name: 'feeAccount', type: String },
   { name: 'accountLevelsAddr', type: String },
   { name: 'sendImmediately', type: Boolean, defaultValue: false },
+  { name: 'privateKey', type: String },
 ];
 const cliOptions = commandLineArgs(cli);
 
-function deploy(web3, compiledContract, args, gas, address, sendImmediately) {
+function deploy(web3, compiledContract, args, gas, address, sendImmediately, privateKey) {
   const abi = JSON.parse(compiledContract.interface);
   const bytecode = compiledContract.bytecode;
 
@@ -29,11 +31,20 @@ function deploy(web3, compiledContract, args, gas, address, sendImmediately) {
 
   const contract = web3.eth.contract(abi);
   const data = `0x${contract.new.getData.apply(null, args.concat({ data: bytecode }))}`;
-  if (gas && address && sendImmediately) {
-    web3.eth.sendTransaction({ from: address, gas, data }, (err, txHash) => {
+  if (gas && address && sendImmediately && privateKey) {
+    const nonce = web3.toHex(web3.eth.getTransactionCount(address));
+    const gasPrice = web3.toHex(web3.eth.gasPrice);
+    const gasLimitHex = web3.toHex(gas);
+    const rawTx = { nonce, gasPrice, gasLimit: gasLimitHex, from: address, data };
+    const tx = new EthereumTx(rawTx);
+    const PK = Buffer.from(privateKey, 'hex');
+    tx.sign(PK);
+    const serializedTx = `0x${tx.serialize().toString('hex')}`;
+    web3.eth.sendRawTransaction(serializedTx, (err, txHash) => {
       if (err) {
         console.log(err);
       } else {
+        console.log(`txHash: ${txHash}`);
         let contractAddress;
         async.whilst(
           () => !contractAddress,
@@ -66,7 +77,7 @@ if (cliOptions.help) {
   cliOptions.address && cliOptions.admin && cliOptions.feeAccount && cliOptions.accountLevelsAddr
 ) {
   const web3 = new Web3();
-  web3.setProvider(new web3.providers.HttpProvider('http://localhost:8545'));
+  web3.setProvider(new web3.providers.HttpProvider('https://rinkeby.infura.io/a24ac7c5484ef4ed0c5eb2d36620ba4e4aa13b8c84684e1b4aab0cebea2ae45cb4d375b77eab56516d34bfbd3c1a833fc51296ff084b770b94fb9028c4d25ccf')); // 'http://localhost:8545'));
 
   // Config
   const solidityFile = './smart_contract/feelessdelta.sol';
@@ -77,9 +88,9 @@ if (cliOptions.help) {
   const feeAccount = cliOptions.feeAccount;
   const accountLevelsAddr = cliOptions.accountLevelsAddr;
   const feeMake = 0;
-  const feeTake = 3000000000000000;
+  const feeTake = 0;
   const feeRebate = 0;
-  const gas = 2000000;
+  const gas = 5000000;
   const args = [admin, feeAccount, accountLevelsAddr, feeMake, feeTake, feeRebate];
 
   solc.loadRemoteVersion(solcVersion, (err, solcV) => {
@@ -89,7 +100,8 @@ if (cliOptions.help) {
       const output = solcV.compile(source, 1); // 1 activates the optimiser
       if (output.errors) console.log(output.errors);
       const sendImmediately = cliOptions.sendImmediately;
-      deploy(web3, output.contracts[`:${contractName}`], args, gas, address, sendImmediately);
+      const privateKey = cliOptions.privateKey;
+      deploy(web3, output.contracts[`:${contractName}`], args, gas, address, sendImmediately, privateKey);
     });
   });
 }
