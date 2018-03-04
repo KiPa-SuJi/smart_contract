@@ -9,4 +9,4 @@ npm test
 
 ### TODO
 
-remove fees
+Optimise/Refactor the contract
